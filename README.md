@@ -6,7 +6,7 @@
 
 **豆包工作每日签到单文件脚本：发现活动、领取奖励，并通过活动详情回查确认签到状态。**
 
-> 当前版本：**v1.3.3**（2026-11-14） · 最新更新：Actions query 增加显式活动组详情探测与 launch 结构诊断
+> 当前版本：**v1.3.4**（2026-11-14） · 最新更新：补充 GitHub Actions 机房出口诊断与可信出口运行边界
 
 [简体中文](README.md) | [English](docs/README.en.md) | [繁體中文](docs/README.zh-Hant.md) | [日本語](docs/README.ja.md) | [한국어](docs/README.ko.md) | [Português (BR)](docs/README.pt-BR.md)
 
@@ -169,6 +169,22 @@ pip3 install requests
 
 手动执行时选择 `mode=query` 只读取活动详情；只有明确选择 `mode=claim` 才会运行不带 `--query` 的领取命令。以后取消 workflow 中 schedule 两行注释时，定时事件也固定走 `--query`，不会自动提交领取。
 
+> [!WARNING]
+> 部分账号在 GitHub 托管 runner 的公网出口上会看到 `launch` 缺活动组、详情返回 `campaign not found`，但同一 Cookie 在本地、住宅网络或可信 Tailscale 出口节点上可正常读取。此时问题属于平台的活动可见性/出口策略，不是 Cookie 或重复签到。Actions 只应作为只读诊断，实际领取请使用本地或受信出口。
+
+可选的可信出口做法：
+
+```yaml
+- name: Optional Tailscale exit node
+  if: ${{ secrets.TS_AUTHKEY != '' && vars.TS_EXIT_NODE != '' }}
+  uses: tailscale/github-action@v3 # 生产环境建议固定到 commit SHA
+  with:
+    authkey: ${{ secrets.TS_AUTHKEY }}
+    args: --exit-node=${{ vars.TS_EXIT_NODE }} --exit-node-allow-lan-access=false
+```
+
+也可通过 `DOUBAOWORK_PROXY` 配置自己的可信 HTTP(S) / SOCKS5 出口。不要为了绕活动可见性伪造设备字段或重复提交 claim。
+
 同一 Cookie 不要同时在本地和其他云端工作流执行 `claim`。需要切换执行端时，先在一个端点完成状态确认，另一个端点只运行 `query`。仓库内用 `concurrency` 串行同仓运行，但 Git 仓库的并发组无法协调本机进程，因此跨设备互斥仍靠这条操作约束。
 
 工作流没有默认透传 `DOUBAOWORK_ACCOUNTS_FILE`、`DOUBAOWORK_USER_AGENT`、`DOUBAOWORK_CLIENT_VERSION` 和 `DOUBAOWORK_NO_NOTIFY`；这些变量可在本地或青龙中使用，或自行在 workflow 中显式添加映射。
@@ -278,7 +294,7 @@ pip3 install requests
 
 ## 📦 版本与发布
 
-- 当前候选版本：`v1.3.3`（正式发布状态以 [Releases](https://github.com/L0NE-6/DoubaoWork-Daily/releases) 的 tag 为准）。
+- 当前候选版本：`v1.3.4`（正式发布状态以 [Releases](https://github.com/L0NE-6/DoubaoWork-Daily/releases) 的 tag 为准）。
 
 ## ☕ 支持与反馈
 

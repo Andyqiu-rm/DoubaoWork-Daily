@@ -79,7 +79,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 STATE_FILE = os.getenv("DOUBAOWORK_STATE_FILE", "").strip() or os.path.join(
     SCRIPT_DIR, "doubaowork_state.json"
 )
-__version__ = "1.3.3"
+__version__ = "1.3.4"
 STATE_VERSION = 1
 CONFIRM_BUDGET_SECONDS = 18.0
 CONFIRM_POLL_DELAYS = (0.0, 2.0, 4.0)
@@ -1406,10 +1406,15 @@ def query_daily(client: DoubaoClient) -> Dict[str, Any]:
         except Exception as error:
             base.update(
                 {
-                    "message": "launch 缺少活动组，显式活动组详情探测失败",
+                    "message": (
+                        "launch 缺少活动组，显式活动组详情探测失败；"
+                        "可能是当前出口 IP 未获得活动下发"
+                    ),
                     "detail_probe": {
                         "group": configured_group,
                         "ok": False,
+                        "http_status": getattr(error, "status", None),
+                        "business_code": getattr(error, "code", None),
                         "message": str(error)[:160],
                     },
                 }

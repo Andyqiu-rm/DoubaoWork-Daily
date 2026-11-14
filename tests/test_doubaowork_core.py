@@ -1052,6 +1052,41 @@ class DoubaoWorkTests(unittest.TestCase):
         self.assertEqual("inactive", result["status"])
         self.assertEqual(["/alice/user/launch"], [path for path, _, _ in client.calls])
 
+    def test_query_detail_probe_reports_egress_visibility_failure(self):
+        class EmptyLaunchDetailFailureClient:
+            account = account()
+            last_diagnostic = {}
+
+            def __init__(self):
+                self.calls = []
+
+            def post(self, path, body, timeout=30.0):
+                self.calls.append((path, body, timeout))
+                if path == "/alice/user/launch":
+                    return {"code": 0, "data": {"ug_campaign_info": {}}}
+                if path == "/alice/ug/campaign/v3/detail/":
+                    raise wb.DoubaoError("豆包工作：campaign not found", 200, 2)
+                raise AssertionError("unexpected path %s" % path)
+
+        client = EmptyLaunchDetailFailureClient()
+        with mock.patch.dict(os.environ, {"DOUBAOWORK_CAMPAIGN_GROUP": wb.V3_GROUP}, clear=False):
+            result = wb.query_daily(client)
+        self.assertEqual("inactive", result["status"])
+        self.assertIn("出口 IP", result["message"])
+        self.assertEqual(200, result["detail_probe"]["http_status"])
+        self.assertEqual(2, result["detail_probe"]["business_code"])
+        self.assertFalse(result["detail_probe"]["ok"])
+        diagnostic = wb.build_diagnostic(
+            client.account,
+            "query",
+            client,
+            "none",
+            result=result,
+        )
+        self.assertTrue(diagnostic["launch_group_missing"])
+        self.assertEqual("missing", diagnostic["launch_shape"]["campaign_group_code"])
+        self.assertEqual(2, diagnostic["detail_probe"]["business_code"])
+
     def test_claim_does_not_probe_explicit_group_when_launch_is_empty(self):
         class EmptyLaunchClient:
             account = account()

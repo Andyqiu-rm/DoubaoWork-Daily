@@ -91,6 +91,8 @@ pip3 install requests
 
 若要啟用排程，取消兩行註解。`15 1 * * *` 使用 UTC，對應北京時間 09:15。
 
+> 重要：部分帳號在 GitHub 託管 runner 的出口 IP 會得到 `campaign not found`，但同一 Cookie 在本機或可信 Tailscale exit node 可正常運作。此時 Actions 只作唯讀診斷，實際領取請使用可信本機/代理出口。
+
 ## 🔧 關鍵環境變數
 
 | 變數 | 說明 |

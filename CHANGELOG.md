@@ -1,5 +1,12 @@
 # 更新日志
 
+## v1.3.4（2026-11-14）
+
+- 确认 GitHub 托管 runner 的机房出口可能触发平台活动不可见：同一 Cookie 在本地、JP VPN 和 Tailscale 可信出口可见，而 hosted runner 返回 `campaign not found`。
+- query 的详情探测失败诊断加入 HTTP 状态、业务码和“可能是当前出口 IP 未获得活动下发”的明确提示。
+- README 增加 Actions 出口运行边界、Tailscale exit node 可选示例和 `DOUBAOWORK_PROXY` 说明；Actions 继续只承担只读诊断，实际领取使用可信出口。
+- 本版不改变 claim 协议、不伪造设备字段，也不把网络可见性问题归因成账号封禁。
+
 ## v1.3.3（2026-11-14）
 
 - `--query` 增加显式活动组详情探测：当 `/alice/user/launch` 返回 `code=0` 但缺少 `campaign_group_code`、同时配置了 `DOUBAOWORK_CAMPAIGN_GROUP` 时，继续只读请求活动详情确认 `checked_in_today`。

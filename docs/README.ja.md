@@ -91,6 +91,8 @@ pip3 install requests
 
 定時実行を有効にする場合はコメントを外します。`15 1 * * *` は UTC で、北京時間 09:15 に相当します。
 
+> 重要: GitHub ホスト runner の出口 IP では `campaign not found` になる一方、同じ Cookie がローカルまたは信頼できる Tailscale exit node で正常になる場合があります。その場合 Actions は読み取り専用の診断のみとし、実際の受領は信頼できるローカル/プロキシ出口で実行してください。
+
 ## 🔧 主な環境変数
 
 | 変数 | 説明 |

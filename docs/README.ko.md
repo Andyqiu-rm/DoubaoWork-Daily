@@ -91,6 +91,8 @@ pip3 install requests
 
 정기 실행을 사용하려면 주석을 해제하세요. `15 1 * * *`는 UTC 기준이며 베이징 시간 09:15입니다.
 
+> 중요: GitHub 호스팅 runner의 출구 IP에서는 `campaign not found`가 나오지만 같은 Cookie가 로컬 또는 신뢰할 수 있는 Tailscale exit node에서 정상일 수 있습니다. 이 경우 Actions는 읽기 전용 진단으로만 사용하고 실제 수령은 신뢰할 수 있는 로컬/프록시 출구에서 실행하세요.
+
 ## 🔧 주요 환경 변수
 
 | 변수 | 설명 |

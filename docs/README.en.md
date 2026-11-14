@@ -80,6 +80,8 @@ This matches the 09:15 Beijing-time rhythm of the workflow example `15 1 * * *`.
 
 The workflow is [../.github/workflows/daily.yml](../.github/workflows/daily.yml). Manual execution is enabled; the schedule block is commented out. Every run defaults to read-only `query`; only an explicit `workflow_dispatch` with `mode=claim` submits a claim. A schedule, when enabled, remains query-only.
 
+> Important: some accounts see `campaign not found` from GitHub-hosted runner egress while the same cookie works locally or through a trusted Tailscale exit node. In that case Actions is a read-only diagnostic only. Use a trusted local/proxy egress for claims; do not fake device fields or resubmit claims.
+
 | Secret | Required | Purpose |
 | :--- | :---: | :--- |
 | `DOUBAOWORK_COOKIES` | One of two | Multi-account cookies |

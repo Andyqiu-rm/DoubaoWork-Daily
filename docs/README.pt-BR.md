@@ -91,6 +91,8 @@ O workflow está em [../.github/workflows/daily.yml](../.github/workflows/daily.
 
 Para ativar o agendamento, remova os comentários. `15 1 * * *` usa UTC e corresponde a 09:15 em Pequim.
 
+> Importante: algumas contas recebem `campaign not found` no egress do runner hospedado pelo GitHub, enquanto o mesmo cookie funciona localmente ou por um Tailscale exit node confiável. Nesse caso, use Actions apenas para diagnóstico somente leitura e faça o resgate real por uma saída local/proxy confiável.
+
 ## 🔧 Variáveis principais
 
 | Variável | Descrição |
