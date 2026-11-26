@@ -24,6 +24,10 @@
   DOUBAOWORK_STATE_FILE  可选 pending 台账路径
   DOUBAOWORK_LOCK_FILE   可选固定锁文件路径
   DOUBAOWORK_NO_NOTIFY=1  关闭通知
+  DOUBAOWORK_ALLOW_EXPLICIT_GROUP_CLAIM=1
+                          可选、默认关闭。launch 缺组时允许用
+                          DOUBAOWORK_CAMPAIGN_GROUP 探测详情并提交一次签到；
+                          仅在确认唯一 daily_checkin 后才写请求。
 
 命令：
   python doubaowork_daily.py
@@ -79,7 +83,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 STATE_FILE = os.getenv("DOUBAOWORK_STATE_FILE", "").strip() or os.path.join(
     SCRIPT_DIR, "doubaowork_state.json"
 )
-__version__ = "1.3.4"
+__version__ = "1.3.5"
 STATE_VERSION = 1
 CONFIRM_BUDGET_SECONDS = 18.0
 CONFIRM_POLL_DELAYS = (0.0, 2.0, 4.0)
@@ -550,7 +554,18 @@ def _ledger_lock(lock_path: str):
     directory = os.path.dirname(os.path.abspath(lock_path))
     os.makedirs(directory, exist_ok=True)
     with _LEDGER_THREAD_LOCK:
-        descriptor = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o600)
+        descriptor = None
+        for attempt in range(200):
+            try:
+                descriptor = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o600)
+                break
+            except PermissionError:
+                # Windows may refuse to open a file that another process has
+                # byte-locked; wait for it to release instead of failing the run.
+                if os.name != "nt" or attempt >= 199:
+                    raise
+                time.sleep(0.05)
+        assert descriptor is not None
         try:
             if os.name == "nt":
                 import msvcrt
@@ -990,6 +1005,21 @@ def _configured_campaign_group() -> str:
     return os.getenv("DOUBAOWORK_CAMPAIGN_GROUP", "").strip()
 
 
+def _allow_explicit_group_claim() -> bool:
+    """Opt-in escape hatch for egress environments where launch omits the group.
+
+    The default stays off so the project's write protection is unchanged:
+    a claim is only submitted when the group was confirmed by query evidence,
+    or when the operator explicitly enabled this flag after verifying via --query.
+    """
+    return os.getenv("DOUBAOWORK_ALLOW_EXPLICIT_GROUP_CLAIM", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+
+
 def _launch_shape(payload: Dict[str, Any]) -> Dict[str, Any]:
     data = payload.get("data") if isinstance(payload, dict) else None
     info = data.get("ug_campaign_info") if isinstance(data, dict) else None
@@ -1272,19 +1302,75 @@ def _claim_daily_locked(
             )
 
     launch = client.post("/alice/user/launch", {})
+    launch_shape = _launch_shape(launch)
     group = _activity_group(launch)
+    detail: Optional[Dict[str, Any]] = None
+    detail_probe: Optional[Dict[str, Any]] = None
     if not group:
-        return {
-            "status": "inactive",
-            "message": "当前没有豆包工作签到活动",
-            "points": None,
-            "streak": None,
-            "completed": False,
-            "query_only": False,
-            "retry_at": None,
-            "checked_in_today": None,
-        }
-    detail = _campaign_detail(client, group)
+        configured_group = _configured_campaign_group()
+        if configured_group and _allow_explicit_group_claim():
+            try:
+                detail = _campaign_detail(client, configured_group)
+            except Exception as error:
+                detail_probe = {
+                    "group": configured_group,
+                    "ok": False,
+                    "http_status": getattr(error, "status", None),
+                    "business_code": getattr(error, "code", None),
+                    "message": redact_sensitive_text(str(error))[:160],
+                }
+            else:
+                daily_rows = [
+                    row for row in collect_tasks(detail, configured_group) if row["daily"]
+                ]
+                if len(daily_rows) == 1:
+                    group = configured_group
+                    detail_probe = {
+                        "group": configured_group,
+                        "ok": True,
+                        "daily_task": "found",
+                    }
+                else:
+                    detail_probe = {
+                        "group": configured_group,
+                        "ok": True,
+                        "daily_task": "missing" if not daily_rows else "ambiguous",
+                    }
+                    detail = None
+        if not group:
+            message = "当前没有豆包工作签到活动"
+            if detail_probe and not detail_probe.get("ok"):
+                message = (
+                    "launch 缺少活动组，显式活动组详情探测失败；"
+                    "可能是当前出口 IP 未获得活动下发"
+                )
+            elif detail_probe and detail_probe.get("daily_task") != "found":
+                message = "当前活动未提供可确认的唯一每日签到任务"
+            inactive: Dict[str, Any] = {
+                "status": "inactive",
+                "message": message,
+                "points": None,
+                "streak": None,
+                "completed": False,
+                "query_only": False,
+                "retry_at": None,
+                "checked_in_today": None,
+                "launch_shape": launch_shape,
+                "launch_group_missing": True,
+            }
+            if detail_probe:
+                inactive["detail_probe"] = detail_probe
+            return inactive
+    if detail is None:
+        detail = _campaign_detail(client, group)
+
+    def annotate(result: Dict[str, Any]) -> Dict[str, Any]:
+        if detail_probe is not None:
+            result["launch_shape"] = launch_shape
+            result["launch_group_missing"] = True
+            result["detail_probe"] = detail_probe
+        return result
+
     daily_tasks = [row for row in collect_tasks(detail, group) if row["daily"]]
     if len(daily_tasks) > 1:
         raise DoubaoError(
@@ -1292,7 +1378,7 @@ def _claim_daily_locked(
             502,
         )
     if not daily_tasks:
-        return {
+        return annotate({
             "status": "inactive",
             "message": "当前活动未提供每日签到任务",
             "points": None,
@@ -1301,11 +1387,11 @@ def _claim_daily_locked(
             "query_only": False,
             "retry_at": None,
             "checked_in_today": None,
-        }
+        })
     task = daily_tasks[0]
     _ensure_ledger_day(entry, now_ms_fn)
     if task["checked"] is True:
-        return {
+        return annotate({
             "status": "already",
             "message": "今日已领取豆包工作签到奖励",
             "points": task["points"],
@@ -1314,7 +1400,7 @@ def _claim_daily_locked(
             "query_only": False,
             "retry_at": None,
             "checked_in_today": True,
-        }
+        })
     entry.pending = PendingAttempt(
         group=task["group"],
         item=task["key"],
@@ -1333,7 +1419,7 @@ def _claim_daily_locked(
             if entry.pending is not None:
                 entry.pending.upstream_failure = OFFICIAL_SYSTEM_ERROR_CODE
                 store.save(entry)
-            return _reconcile_pending(
+            return annotate(_reconcile_pending(
                 client,
                 store,
                 entry,
@@ -1342,7 +1428,7 @@ def _claim_daily_locked(
                 monotonic_fn,
                 sleep_fn,
                 dict(error.diagnostic),
-            )
+            ))
         if not _is_confirming_error(error):
             if _is_rejected_error(error):
                 _clear_pending(store, entry)
@@ -1356,7 +1442,7 @@ def _claim_daily_locked(
             if entry.pending is not None:
                 entry.pending.upstream_failure = OFFICIAL_SYSTEM_ERROR_CODE
                 store.save(entry)
-            return _reconcile_pending(
+            return annotate(_reconcile_pending(
                 client,
                 store,
                 entry,
@@ -1365,7 +1451,7 @@ def _claim_daily_locked(
                 monotonic_fn,
                 sleep_fn,
                 dict(client.last_diagnostic),
-            )
+            ))
         if _is_rejected_error(error):
             _clear_pending(store, entry)
         raise
@@ -1375,7 +1461,7 @@ def _claim_daily_locked(
         if received_points is not None and entry.pending is not None:
             entry.pending.points = received_points
             store.save(entry)
-    return _reconcile_pending(
+    return annotate(_reconcile_pending(
         client,
         store,
         entry,
@@ -1383,7 +1469,7 @@ def _claim_daily_locked(
         now_ms_fn,
         monotonic_fn,
         sleep_fn,
-    )
+    ))
 
 
 def query_daily(client: DoubaoClient) -> Dict[str, Any]:
