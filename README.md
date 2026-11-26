@@ -6,7 +6,7 @@
 
 **豆包工作每日签到单文件脚本：发现活动、定位唯一 daily_checkin、领取奖励，并通过活动详情回读确认 checked_in_today。**
 
-> 当前版本：**v1.3.5**（2026-11-26） · 核心能力：query/claim 双模式、活动组识别、固定锁、pending 台账、脱敏诊断、可选缺组 claim 探测
+> 当前版本：**v1.3.6**（2026-11-26） · 核心能力：query/claim 双模式、活动组识别、固定锁、pending 台账、脱敏诊断、可选缺组 claim 探测、Actions Job Summary
 
 [简体中文](README.md) · [English](docs/README.en.md) · [繁體中文](docs/README.zh-Hant.md) · [日本語](docs/README.ja.md) · [한국어](docs/README.ko.md) · [Português (BR)](docs/README.pt-BR.md)
 
@@ -176,7 +176,9 @@ pip3 install requests
 <a id="actions"></a>
 ## ☁️ GitHub Actions
 
-工作流位于 [`.github/workflows/daily.yml`](.github/workflows/daily.yml)，默认 `mode=query` 且只读；只有手动选择 `mode=claim` 才运行领取命令。schedule 保持注释，定时事件也固定只读。
+工作流位于 [`.github/workflows/daily.yml`](.github/workflows/daily.yml)：手动 `mode=query` 只读，`mode=claim` 明确领取；定时事件每天北京时间 07:05 与 11:05（cron 为 UTC `5 23 * * *`、`5 3 * * *`）各运行一次，执行 claim 领取。同一 Cookie 的多个执行端不要同时开启 claim 定时，避免并发重复提交。
+
+每次运行后脚本会把脱敏结果写入 GitHub Actions 的 Job Summary，直接在本次运行的页面顶部显示一张结果表（账号、状态、结果、奖励额度、连签，以及成功/失败计数），无需点进日志即可查看；本地运行时因没有 `GITHUB_STEP_SUMMARY` 环境变量会自动跳过，行为不变。
 
 | Secret / Variable | 必填 | 说明 |
 | :--- | :---: | :--- |
@@ -290,7 +292,7 @@ DoubaoWork-Daily/
 <a id="release"></a>
 ## 📦 版本与发布
 
-- 当前版本：`v1.3.5`，新增显式确认后的缺组 claim 探测开关与 Windows 锁文件重试。
+- 当前版本：`v1.3.6`，新增 Actions Job Summary（每次运行在页面顶部展示脱敏结果表格）与每日定时领取。
 - 历史版本保留在 [Releases](https://github.com/L0NE-6/DoubaoWork-Daily/releases)。
 - 变更记录见 [CHANGELOG.md](CHANGELOG.md)。
 
