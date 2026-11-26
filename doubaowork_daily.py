@@ -83,7 +83,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 STATE_FILE = os.getenv("DOUBAOWORK_STATE_FILE", "").strip() or os.path.join(
     SCRIPT_DIR, "doubaowork_state.json"
 )
-__version__ = "1.3.5"
+__version__ = "1.3.6"
 STATE_VERSION = 1
 CONFIRM_BUDGET_SECONDS = 18.0
 CONFIRM_POLL_DELAYS = (0.0, 2.0, 4.0)
@@ -1613,6 +1613,74 @@ def notify(title: str, content: str) -> None:
             log("📢 企业微信异常: %s" % redact_sensitive_text(error)[:60])
 
 
+SUMMARY_STATUS_LABELS = {
+    "claimed": "✅ 已领取",
+    "done": "✅ 已完成",
+    "already": "✅ 已领取",
+    "available": "🟡 可领取",
+    "confirming": "⏳ 确认中",
+    "inactive": "⚪ 无活动",
+    "error": "❌ 错误",
+    "auth": "❌ 登录失效",
+    "ratelimit": "⏳ 限流",
+}
+
+
+def _summary_cell(value: Any) -> str:
+    """把任意文本安全地放进 Markdown 表格单元格。"""
+    return str(value or "").replace("\\", "\\\\").replace("|", "\\|").replace("\r", " ").replace("\n", " ")
+
+
+def _summary_status_label(status: str) -> str:
+    return SUMMARY_STATUS_LABELS.get(status, "ℹ️ %s" % status if status else "ℹ️ 未知")
+
+
+def write_github_summary(rows: List[Dict[str, Any]], action: str, failed: int) -> None:
+    """在 GitHub Actions 中写出 Job Summary；非 Actions 环境自动跳过。"""
+    summary_path = os.getenv("GITHUB_STEP_SUMMARY", "").strip()
+    if not summary_path:
+        return
+    try:
+        total = len(rows)
+        succeeded = total - failed
+        mode_label = "只读核验 (query)" if action == "query" else "领取 (claim)"
+        lines = [
+            "## 🫘 豆包工作每日奖励",
+            "",
+            "- 运行模式：%s" % mode_label,
+            "- 执行时间：%s（北京时间）" % datetime.now(BEIJING_TZ).strftime("%Y-%m-%d %H:%M:%S"),
+            "- 账号结果：共 %d 个，成功 %d，失败 %d" % (total, succeeded, failed),
+            "",
+            "| 账号 | 状态 | 结果 | 奖励额度 | 连签 |",
+            "| :--- | :---: | :--- | :---: | :---: |",
+        ]
+        for row in rows:
+            points = row.get("points")
+            streak = row.get("streak")
+            lines.append(
+                "| %s | %s | %s | %s | %s |"
+                % (
+                    _summary_cell(row.get("name", "")),
+                    _summary_cell(row.get("label", "")),
+                    _summary_cell(row.get("message", "")),
+                    _summary_cell(points if points is not None else "—"),
+                    _summary_cell(("%s 天" % streak) if streak is not None else "—"),
+                )
+            )
+        lines.extend(
+            [
+                "",
+                "> 脱敏诊断明细见步骤日志中的「🩺 诊断」行；领取类结果以官方详情回读为准。",
+                "",
+            ]
+        )
+        with open(summary_path, "a", encoding="utf-8") as handle:
+            handle.write("\n".join(lines))
+    except Exception as error:
+        # 摘要是增强项，写失败不应影响签到主流程
+        log("⚠️ 写入 Job Summary 失败: %s" % redact_sensitive_text(error)[:120])
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="豆包工作每日奖励")
     parser.add_argument("--version", action="version", version="%(prog)s " + __version__)
@@ -1635,6 +1703,7 @@ def main() -> int:
         return 1
 
     lines = ["🫘 豆包工作每日奖励", ""]
+    summary_rows: List[Dict[str, Any]] = []
     failed = 0
     action = "query" if args.query else "claim"
     for index, account in enumerate(accounts, 1):
@@ -1663,6 +1732,15 @@ def main() -> int:
                     "（%s 额度）" % result["points"] if result.get("points") is not None else "",
                 )
             )
+            summary_rows.append(
+                {
+                    "name": safe_name,
+                    "label": _summary_status_label(status),
+                    "message": message,
+                    "points": result.get("points"),
+                    "streak": result.get("streak"),
+                }
+            )
             if status in ("error", "auth"):
                 failed += 1
         except DoubaoAuthError as error:
@@ -1671,18 +1749,27 @@ def main() -> int:
             safe_error = redact_sensitive_text(error, secrets)
             log("   ⛔ 登录态失效: %s" % safe_error)
             lines.append("%s: ⛔ %s" % (safe_name, safe_error))
+            summary_rows.append(
+                {"name": safe_name, "label": _summary_status_label("auth"), "message": safe_error}
+            )
         except DoubaoRateLimitError as error:
             failure = error
             failed += 1
             safe_error = redact_sensitive_text(error, secrets)
             log("   ⏳ 限流: %s" % safe_error)
             lines.append("%s: ⏳ %s" % (safe_name, safe_error))
+            summary_rows.append(
+                {"name": safe_name, "label": _summary_status_label("ratelimit"), "message": safe_error}
+            )
         except Exception as error:
             failure = error
             failed += 1
             safe_error = redact_sensitive_text(error, secrets)
             log("   ❌ %s" % safe_error[:160])
             lines.append("%s: ❌ %s" % (safe_name, safe_error[:100]))
+            summary_rows.append(
+                {"name": safe_name, "label": _summary_status_label("error"), "message": safe_error[:160]}
+            )
         try:
             pending = ledger_pending_state(account_ledger_key(account), STATE_FILE)
         except DoubaoError:
@@ -1695,6 +1782,7 @@ def main() -> int:
     log("")
     log(content)
     notify("🫘 豆包工作每日奖励", content)
+    write_github_summary(summary_rows, action, failed)
     return 1 if failed else 0
 
 
