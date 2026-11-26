@@ -53,6 +53,7 @@ jobs:
           DOUBAOWORK_FINGERPRINT: ${{ secrets.DOUBAOWORK_FINGERPRINT }}
           DOUBAOWORK_PROXY: ${{ secrets.DOUBAOWORK_PROXY }}
           DOUBAOWORK_CAMPAIGN_GROUP: ${{ vars.DOUBAOWORK_CAMPAIGN_GROUP || 'pc_incentive_task_mvp_v3' }}
+          DOUBAOWORK_ALLOW_EXPLICIT_GROUP_CLAIM: ${{ vars.DOUBAOWORK_ALLOW_EXPLICIT_GROUP_CLAIM || '' }}
           PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
           BARK_URL: ${{ secrets.BARK_URL }}
           WECOM_WEBHOOK: ${{ secrets.WECOM_WEBHOOK }}
@@ -67,6 +68,7 @@ jobs:
           DOUBAOWORK_FINGERPRINT: ${{ secrets.DOUBAOWORK_FINGERPRINT }}
           DOUBAOWORK_PROXY: ${{ secrets.DOUBAOWORK_PROXY }}
           DOUBAOWORK_CAMPAIGN_GROUP: ${{ vars.DOUBAOWORK_CAMPAIGN_GROUP || 'pc_incentive_task_mvp_v3' }}
+          DOUBAOWORK_ALLOW_EXPLICIT_GROUP_CLAIM: ${{ vars.DOUBAOWORK_ALLOW_EXPLICIT_GROUP_CLAIM || '' }}
           PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
           BARK_URL: ${{ secrets.BARK_URL }}
           WECOM_WEBHOOK: ${{ secrets.WECOM_WEBHOOK }}
