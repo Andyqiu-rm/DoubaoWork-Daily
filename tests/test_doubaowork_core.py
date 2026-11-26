@@ -363,17 +363,21 @@ class DoubaoWorkTests(unittest.TestCase):
             ),
         )
 
-    def test_actions_workflow_defaults_to_query_and_requires_explicit_claim(self):
+    def test_actions_workflow_manual_query_readonly_and_schedule_claims(self):
         workflow = (
             Path(wb.__file__).resolve().parent / ".github" / "workflows" / "daily.yml"
         ).read_text(encoding="utf-8")
         self.assertIn("default: query", workflow)
         self.assertIn(
-            "github.event_name != 'workflow_dispatch' || inputs.mode == 'query'", workflow
+            "github.event_name == 'workflow_dispatch' && inputs.mode == 'query'", workflow
         )
         self.assertIn(
-            "github.event_name == 'workflow_dispatch' && inputs.mode == 'claim'", workflow
+            "github.event_name == 'schedule' || "
+            "(github.event_name == 'workflow_dispatch' && inputs.mode == 'claim')",
+            workflow,
         )
+        self.assertIn('cron: "5 23 * * *"', workflow)
+        self.assertIn('cron: "5 3 * * *"', workflow)
         self.assertIn("run: python doubaowork_daily.py --query", workflow)
         self.assertIn("run: python doubaowork_daily.py\n", workflow)
         self.assertIn(
@@ -1202,6 +1206,44 @@ class DoubaoWorkTests(unittest.TestCase):
         self.assertEqual("available", result["status"])
         self.assertFalse(result["completed"])
         self.assertEqual(0, client.claim_calls)
+
+    def test_github_summary_writes_masked_table(self):
+        rows = [
+            {
+                "name": "acct|one",
+                "label": wb._summary_status_label("claimed"),
+                "message": "已领取额度 10",
+                "points": 10,
+                "streak": 3,
+            },
+            {
+                "name": "acct-two",
+                "label": wb._summary_status_label("auth"),
+                "message": "登录态已失效",
+            },
+        ]
+        with tempfile.NamedTemporaryFile("w", suffix=".md", delete=False, encoding="utf-8") as fh:
+            summary_path = fh.name
+        try:
+            with mock.patch.dict(os.environ, {"GITHUB_STEP_SUMMARY": summary_path}):
+                wb.write_github_summary(rows, "claim", 1)
+            with open(summary_path, "r", encoding="utf-8") as fh:
+                content = fh.read()
+        finally:
+            os.unlink(summary_path)
+        self.assertIn("## 🫘 豆包工作每日奖励", content)
+        self.assertIn("领取 (claim)", content)
+        self.assertIn("共 2 个，成功 1，失败 1", content)
+        self.assertIn("acct\\|one", content)
+        self.assertIn("✅ 已领取", content)
+        self.assertIn("❌ 登录失效", content)
+        self.assertIn("3 天", content)
+        self.assertIn("—", content)
+
+    def test_github_summary_skips_outside_actions(self):
+        with mock.patch.dict(os.environ, {}, clear=True):
+            with mock.patch("builtins.open", side_effect=AssertionError("should not write")):
+                wb.write_github_summary([], "query", 0)
 
 
 if __name__ == "__main__":
