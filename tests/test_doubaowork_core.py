@@ -1105,6 +1105,97 @@ class DoubaoWorkTests(unittest.TestCase):
         self.assertEqual("inactive", result["status"])
         self.assertEqual(["/alice/user/launch"], [path for path, _, _ in client.calls])
 
+    def test_claim_optin_probes_explicit_group_and_submits_once(self):
+        class EmptyLaunchDetailClient(FakeClient):
+            def post(self, path, body, timeout=30.0):
+                if path == "/alice/user/launch":
+                    self.calls.append((path, body, timeout))
+                    return {"code": 0, "data": {}}
+                return super().post(path, body, timeout)
+
+        client = EmptyLaunchDetailClient(
+            [detail(), detail(checked=True, state=3)],
+            {"code": 0, "data": {"checked_in": True}},
+        )
+        with mock.patch.dict(
+            os.environ,
+            {
+                "DOUBAOWORK_CAMPAIGN_GROUP": wb.V3_GROUP,
+                "DOUBAOWORK_ALLOW_EXPLICIT_GROUP_CLAIM": "1",
+            },
+            clear=False,
+        ):
+            result = self.claim(client)
+        self.assertEqual("claimed", result["status"])
+        self.assertEqual(1, client.claim_calls)
+        self.assertTrue(result["launch_group_missing"])
+        self.assertEqual("found", result["detail_probe"]["daily_task"])
+        claim_call = next(call for call in client.calls if call[0] == wb.CLAIM_PATH)
+        self.assertEqual({"scene": wb.V3_GROUP}, claim_call[1])
+        self.assertIsNone(self.ledger().pending)
+
+    def test_claim_optin_detail_failure_stays_read_only_with_probe(self):
+        class EmptyLaunchFailureClient(FakeClient):
+            def post(self, path, body, timeout=30.0):
+                if path == "/alice/user/launch":
+                    self.calls.append((path, body, timeout))
+                    return {"code": 0, "data": {}}
+                if path == "/alice/ug/campaign/v3/detail/":
+                    self.calls.append((path, body, timeout))
+                    raise wb.DoubaoError("豆包工作：campaign not found", 200, 2)
+                return super().post(path, body, timeout)
+
+        client = EmptyLaunchFailureClient([detail()], {"code": 0, "data": {"checked_in": True}})
+        with mock.patch.dict(
+            os.environ,
+            {
+                "DOUBAOWORK_CAMPAIGN_GROUP": wb.V3_GROUP,
+                "DOUBAOWORK_ALLOW_EXPLICIT_GROUP_CLAIM": "true",
+            },
+            clear=False,
+        ):
+            result = self.claim(client)
+        self.assertEqual("inactive", result["status"])
+        self.assertEqual(0, client.claim_calls)
+        self.assertIn("出口 IP", result["message"])
+        self.assertFalse(result["detail_probe"]["ok"])
+        self.assertEqual(2, result["detail_probe"]["business_code"])
+        diagnostic = wb.build_diagnostic(
+            client.account,
+            "claim",
+            client,
+            "none",
+            result=result,
+        )
+        self.assertTrue(diagnostic["launch_group_missing"])
+        self.assertEqual(2, diagnostic["detail_probe"]["business_code"])
+
+    def test_claim_optin_without_unique_daily_task_does_not_write(self):
+        class EmptyLaunchNoTaskClient(FakeClient):
+            def post(self, path, body, timeout=30.0):
+                if path == "/alice/user/launch":
+                    self.calls.append((path, body, timeout))
+                    return {"code": 0, "data": {}}
+                if path == "/alice/ug/campaign/v3/detail/":
+                    self.calls.append((path, body, timeout))
+                    return {"code": 0, "data": {}}
+                return super().post(path, body, timeout)
+
+        client = EmptyLaunchNoTaskClient([detail()], {"code": 0, "data": {"checked_in": True}})
+        with mock.patch.dict(
+            os.environ,
+            {
+                "DOUBAOWORK_CAMPAIGN_GROUP": wb.V3_GROUP,
+                "DOUBAOWORK_ALLOW_EXPLICIT_GROUP_CLAIM": "on",
+            },
+            clear=False,
+        ):
+            result = self.claim(client)
+        self.assertEqual("inactive", result["status"])
+        self.assertEqual(0, client.claim_calls)
+        self.assertEqual("missing", result["detail_probe"]["daily_task"])
+        self.assertIn("唯一", result["message"])
+
     def test_query_does_not_claim_and_task_status_three_is_not_done(self):
         client = FakeClient([detail(checked=False, state=3)])
         result = wb.query_daily(client)
