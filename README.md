@@ -6,7 +6,7 @@
 
 **豆包工作每日签到单文件脚本：发现活动、定位唯一 daily_checkin、领取奖励，并通过活动详情回读确认 checked_in_today。**
 
-> 当前版本：**v1.3.4**（2026-11-14） · 核心能力：query/claim 双模式、活动组识别、固定锁、pending 台账、脱敏诊断
+> 当前版本：**v1.3.5**（2026-11-26） · 核心能力：query/claim 双模式、活动组识别、固定锁、pending 台账、脱敏诊断、可选缺组 claim 探测
 
 [简体中文](README.md) · [English](docs/README.en.md) · [繁體中文](docs/README.zh-Hant.md) · [日本語](docs/README.ja.md) · [한국어](docs/README.ko.md) · [Português (BR)](docs/README.pt-BR.md)
 
@@ -107,7 +107,8 @@ Cookie
 | `DOUBAOWORK_USER_AGENT` | 可选 User-Agent |
 | `DOUBAOWORK_CLIENT_VERSION` | 默认 `2.33.5` |
 | `DOUBAOWORK_PROXY` | HTTP(S) / SOCKS5 代理 |
-| `DOUBAOWORK_CAMPAIGN_GROUP` | 只用于 query 的缺组详情探测 |
+| `DOUBAOWORK_CAMPAIGN_GROUP` | query 缺组详情探测；claim 需同时开启下面的开关才会使用 |
+| `DOUBAOWORK_ALLOW_EXPLICIT_GROUP_CLAIM` | `1`/`true`/`yes`/`on` 表示允许 claim 在 launch 缺组时按显式组探测详情；默认关闭，详情不可见或任务不唯一都不会写请求 |
 | `DOUBAOWORK_NO_NOTIFY` | `1` 表示关闭通知 |
 | `DOUBAOWORK_BASE_URL` | 默认 `https://www.doubao.com` |
 | `DOUBAOWORK_STATE_FILE` | pending 台账路径 |
@@ -186,7 +187,7 @@ pip3 install requests
 | `DOUBAOWORK_CAMPAIGN_GROUP` | 否 | 默认 `pc_incentive_task_mvp_v3` |
 | `PUSHPLUS_TOKEN` / `BARK_URL` / `WECOM_WEBHOOK` | 否 | 推送 |
 
-GitHub 托管 runner 的公网出口可能看到 `campaign not found`，而同一 Cookie 在本地或可信出口可见。此时是活动可见性问题，不应伪造设备字段或重复 claim。Actions 主要作为只读诊断，实际领取优先使用本地或可信出口。
+GitHub 托管 runner 的公网出口可能看到 `campaign not found`，而同一 Cookie 在本地或可信出口可见。此时是活动可见性问题，不应伪造设备字段或重复 claim。Actions 默认仍只做只读诊断；若已用 `--query` 确认详情可探测到唯一签到任务，可把仓库变量 `DOUBAOWORK_ALLOW_EXPLICIT_GROUP_CLAIM` 设为 `1`，让 claim 在 launch 缺组时按同一活动组补一次探测并提交；否则保持默认关闭，claim 仍不写请求。活动详情本身不可见时，这个开关也无效，仍需本地或可信出口（`DOUBAOWORK_PROXY`）。
 
 ---
 
@@ -289,7 +290,7 @@ DoubaoWork-Daily/
 <a id="release"></a>
 ## 📦 版本与发布
 
-- 当前版本：`v1.3.4`，补充 Actions 出口诊断与可信出口边界。
+- 当前版本：`v1.3.5`，新增显式确认后的缺组 claim 探测开关与 Windows 锁文件重试。
 - 历史版本保留在 [Releases](https://github.com/L0NE-6/DoubaoWork-Daily/releases)。
 - 变更记录见 [CHANGELOG.md](CHANGELOG.md)。
 
