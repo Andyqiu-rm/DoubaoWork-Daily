@@ -1,6 +1,6 @@
 name: 🫘 Doubao Work Daily
 
-run-name: "Doubao Work ${{ inputs.mode || 'query' }}"
+run-name: "Doubao Work ${{ github.event_name == 'schedule' && 'scheduled claim' || (inputs.mode || 'query') }}"
 
 on:
   workflow_dispatch:
@@ -13,9 +13,12 @@ on:
         options:
           - query
           - claim
-  # 定时默认关闭；确认账号可用后取消下面两行注释
-  # schedule:
-  #   - cron: "15 1 * * *"
+  # 定时：每天北京时间 07:05 与 11:05 各运行一次
+  # GitHub Actions 的 cron 使用 UTC，北京时间需减 8 小时
+  # 07:05 CST = 23:05 UTC(前一天)；11:05 CST = 03:05 UTC
+  schedule:
+    - cron: "5 23 * * *"
+    - cron: "5 3 * * *"
 
 permissions:
   contents: read
@@ -43,8 +46,8 @@ jobs:
           restore-keys: |
             doubaowork-state-
       - run: pip install requests
-      - name: Query only (default)
-        if: ${{ github.event_name != 'workflow_dispatch' || inputs.mode == 'query' }}
+      - name: Query only (manual query only)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'query' }}
         env:
           DOUBAOWORK_COOKIES: ${{ secrets.DOUBAOWORK_COOKIES }}
           DOUBAOWORK_COOKIE: ${{ secrets.DOUBAOWORK_COOKIE }}
@@ -58,8 +61,8 @@ jobs:
           BARK_URL: ${{ secrets.BARK_URL }}
           WECOM_WEBHOOK: ${{ secrets.WECOM_WEBHOOK }}
         run: python doubaowork_daily.py --query
-      - name: Claim once (explicit dispatch only)
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'claim' }}
+      - name: Claim once (schedule or explicit dispatch)
+        if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'claim') }}
         env:
           DOUBAOWORK_COOKIES: ${{ secrets.DOUBAOWORK_COOKIES }}
           DOUBAOWORK_COOKIE: ${{ secrets.DOUBAOWORK_COOKIE }}
@@ -74,7 +77,7 @@ jobs:
           WECOM_WEBHOOK: ${{ secrets.WECOM_WEBHOOK }}
         run: python doubaowork_daily.py
       - name: Save Doubao Work check-in ledger
-        if: always() && github.event_name == 'workflow_dispatch' && inputs.mode == 'claim' && hashFiles('doubaowork_state.json') != ''
+        if: always() && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'claim')) && hashFiles('doubaowork_state.json') != ''
         uses: actions/cache/save@v4
         with:
           path: doubaowork_state.json
